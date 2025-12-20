@@ -1,9 +1,9 @@
 // app/panel/layout.tsx
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 type PanelPermission = "admin" | "editor" | "viewer";
 
@@ -16,176 +16,162 @@ type PanelUser = {
   permission: PanelPermission;
 };
 
-const defaultUser: PanelUser = {
-  hotelName: "Opsstay Hotel",
-  fullName: "Yetkili Kullanıcı",
-  userId: "OPS-00000",
-  roleLabel: "Operasyon",
-  department: "Genel",
-  permission: "viewer",
-};
+const ALL_NAV_ITEMS = [
+  { key: "sorgu", label: "Sorgu ekranı", href: "/panel/sorgu" },
+  { key: "kayit-ekle", label: "Kayıt ekle", href: "/panel/kayit-ekle" },
+  { key: "kayit-sil", label: "Kayıt sil", href: "/panel/kayit-sil" },
+  { key: "talep-olustur", label: "Talep oluştur", href: "/panel/talep-olustur" },
+];
 
-export default function PanelLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+function classNames(...classes: (string | false | null | undefined)[]) {
+  return classes.filter(Boolean).join(" ");
+}
+
+export default function PanelLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<PanelUser | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  // Şu an login sayfasında mıyız?
+  const isLoginPage = pathname === "/panel/login";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
     const stored = window.localStorage.getItem("opsstay_user");
     if (stored) {
       try {
         setUser(JSON.parse(stored));
       } catch {
-        setUser(defaultUser);
+        setUser(null);
       }
     } else {
-      setUser(defaultUser);
+      // Kullanıcı yoksa ve login sayfasında değilsek login'e at
+      if (!isLoginPage) {
+        router.replace("/panel/login");
+      }
     }
-  }, []);
 
-  const isActive = (href: string) => pathname === href;
+    setLoaded(true);
+  }, [router, isLoginPage]);
 
-  const permissionLabel =
-    user?.permission === "admin"
-      ? "Yönetici"
-      : user?.permission === "editor"
-      ? "Düzenleyici"
-      : "Görüntüleyici";
+  const isReception =
+    user?.department &&
+    user.department.toLocaleLowerCase("tr-TR").includes("resepsiyon");
 
-  function handleLogout() {
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem("opsstay_logged_in");
-      window.localStorage.removeItem("opsstay_user");
+  // Resepsiyon ise sadece Sorgu + Talep
+  const visibleNavItems = isReception
+    ? ALL_NAV_ITEMS.filter((item) =>
+        ["sorgu", "talep-olustur"].includes(item.key)
+      )
+    : ALL_NAV_ITEMS;
+
+  // Resepsiyon kullanıcısı /kayit-ekle veya /kayit-sil'e gitmeye çalışırsa sorguya at
+  useEffect(() => {
+    if (!loaded || !isReception || isLoginPage) return;
+
+    if (
+      pathname.startsWith("/panel/kayit-ekle") ||
+      pathname.startsWith("/panel/kayit-sil")
+    ) {
+      router.replace("/panel/sorgu");
     }
-    router.push("/");
+  }, [loaded, isReception, pathname, router, isLoginPage]);
+
+  if (!loaded) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
+        <div className="text-sm text-slate-400">Panel yükleniyor...</div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50 flex">
-      {/* SOL SİDEBAR */}
-      <aside className="w-56 md:w-64 border-r border-slate-800 bg-slate-950/90 flex flex-col">
-        {/* Kullanıcı + otel bilgisi */}
-        <div className="px-5 pt-5 pb-4 border-b border-slate-800">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="h-9 w-9 rounded-2xl bg-gradient-to-br from-sky-500 to-sky-400 flex items-center justify-center text-white text-xl font-bold shadow-md">
-              O
-            </div>
-            <div className="flex flex-col overflow-hidden">
-              <span className="text-xs font-semibold text-slate-50 truncate">
-                {user?.hotelName ?? "Opsstay panel"}
-              </span>
-              <span className="text-[11px] text-slate-400 truncate">
-                {user?.fullName ?? "Yetkili kullanıcı"}
-              </span>
-            </div>
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-slate-950 text-slate-50 flex">
+      {/* Sol menü – login sayfasında gizli */}
+      {!isLoginPage && (
+        <aside className="hidden md:flex w-56 flex-col border-r border-slate-800 bg-slate-950/95">
+          {/* Logo + başlık */}
+          <div className="px-5 pt-4 pb-4 border-b border-slate-800">
+            <Link href="/" className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-2xl bg-sky-500 flex items-center justify-center text-xs font-bold text-slate-950">
+                o
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold tracking-[0.18em] uppercase text-slate-400">
+                  opsstay panel
+                </div>
+                <div className="text-[10px] text-slate-500">
+                  Misafir ön kontrol alanı
+                </div>
+              </div>
+            </Link>
           </div>
 
-          <div className="rounded-xl bg-slate-900/70 border border-slate-700/80 px-3 py-2.5 text-[11px] text-slate-300 space-y-1">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-slate-400">ID</span>
-              <span className="font-mono text-[10px] text-slate-100">
-                {user?.userId ?? "OPS-00000"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-slate-400">Departman</span>
-              <span className="font-medium text-slate-100">
-                {user?.department ?? "-"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-slate-400">Görev</span>
-              <span className="font-medium text-sky-400">
-                {user?.roleLabel ?? "-"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-slate-400">Yetki</span>
-              <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-emerald-300 border border-emerald-500/40">
-                {permissionLabel}
-              </span>
-            </div>
-          </div>
-        </div>
+          {/* Menü */}
+          <nav className="flex-1 px-3 py-4 space-y-1 text-sm">
+            {visibleNavItems.map((item) => {
+              const active = pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.key}
+                  href={item.href}
+                  className={classNames(
+                    "flex items-center rounded-xl px-3 py-2.5 transition-colors",
+                    active
+                      ? "bg-sky-500/15 text-sky-100 border border-sky-500/60"
+                      : "text-slate-300 hover:bg-slate-900/70 hover:text-slate-50 border border-transparent"
+                  )}
+                >
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
 
-        {/* Menü */}
-        <nav className="flex-1 px-4 py-4 text-sm space-y-1">
-          {[
-            { label: "Sorgu ekranı", href: "/panel/sorgu" },
-            { label: "Kayıt ekle", href: "/panel/kayit-ekle" },
-            { label: "Kayıt sil", href: "/panel/kayit-sil" },
-            { label: "Talep oluştur", href: "/panel/talep-olustur" },
-          ].map((item) => {
-            const active = isActive(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`block rounded-lg px-3 py-2 text-sm ${
-                  active
-                    ? "bg-sky-600 text-white shadow"
-                    : "text-slate-200 hover:bg-slate-900 hover:text-white"
-                }`}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* Footer bilgi */}
-        <div className="px-4 pb-4 pt-2 border-t border-slate-800 text-[11px] text-slate-500 space-y-2">
-          <p className="leading-snug">
-            Bu panel, yalnızca yetkili kullanıcılar tarafından misafir ön
-            kontrol süreçlerini yönetmek için kullanılır.
-          </p>
-          <button
-            type="button"
-            onClick={() => router.push("/")}
-            className="text-sky-400 hover:text-sky-300"
-          >
-            Ana sayfaya dön
-          </button>
-        </div>
-      </aside>
-
-      {/* SAĞ TARAF: HEADER + CONTENT */}
-      <div className="flex-1 flex flex-col">
-        <header className="h-14 border-b border-slate-800 bg-slate-950/80 backdrop-blur flex items-center justify-between px-6 text-xs">
-          <div className="text-slate-400">
-            <span className="text-slate-500">Panel</span>
-            <span className="mx-1">/</span>
-            <span className="text-slate-200">Misafir ön kontrol alanı</span>
-          </div>
-          <div className="flex items-center gap-3 text-[11px] text-slate-300">
+          {/* Kullanıcı bilgisi + alt metin + Çıkış */}
+          <div className="px-4 py-4 border-t border-slate-800 text-[11px] text-slate-500 space-y-2">
             {user && (
-              <span className="hidden sm:inline text-slate-400">
-                Oturum:{" "}
-                <span className="text-slate-100 font-medium">
+              <div className="space-y-1">
+                <div className="font-semibold text-slate-200">
                   {user.fullName}
-                </span>{" "}
-                • {user.hotelName}
-              </span>
+                </div>
+                <div className="text-slate-400">
+                  {user.department} • {user.roleLabel}
+                </div>
+                <div className="text-slate-500 text-[10px]">
+                  {user.hotelName}
+                </div>
+              </div>
             )}
+
             <button
               type="button"
-              onClick={handleLogout}
-              className="rounded-full border border-slate-600 px-3 py-1 text-[11px] hover:border-red-400 hover:text-red-300 transition-colors"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.localStorage.removeItem("opsstay_user");
+                  // Çıkıştan sonra ANASAYFAYA yönlendiriyoruz
+                  router.replace("/");
+                }
+              }}
+              className="mt-2 inline-flex items-center rounded-full border border-slate-600 px-3 py-1 text-[10px] text-slate-300 hover:bg-slate-800/80"
             >
               Çıkış yap
             </button>
-          </div>
-        </header>
 
-        <main className="flex-1 overflow-auto bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-          {children}
-        </main>
-      </div>
+            <p className="mt-2 text-[10px] text-slate-600">
+              Bu panel, yalnızca yetkili kullanıcılar tarafından misafir ön
+              kontrol süreçlerini yönetmek için kullanılır.
+            </p>
+          </div>
+        </aside>
+      )}
+
+      {/* Sağ taraf (içerik) */}
+      <main className="flex-1 min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-slate-950">
+        {children}
+      </main>
     </div>
   );
 }

@@ -21,9 +21,10 @@ const ALL_NAV_ITEMS = [
   { key: "kayit-ekle", label: "Kayıt ekle", href: "/panel/kayit-ekle" },
   { key: "kayit-sil", label: "Kayıt sil", href: "/panel/kayit-sil" },
   { key: "talep-olustur", label: "Talep oluştur", href: "/panel/talep-olustur" },
+  { key: "talepler", label: "Talepler", href: "/panel/talepler" }, // ✅ yeni
 ];
 
-function classNames(...classes: (string | false | null | undefined)[]) {
+function cx(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
@@ -32,7 +33,6 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
   const [user, setUser] = useState<PanelUser | null>(null);
   const [loaded, setLoaded] = useState(false);
-
   const isLoginPage = pathname === "/panel/login";
 
   useEffect(() => {
@@ -45,44 +45,47 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
       } catch {
         setUser(null);
       }
-    } else {
-      if (!isLoginPage) {
-        router.replace("/panel/login");
-      }
+    } else if (!isLoginPage) {
+      router.replace("/panel/login");
     }
 
     setLoaded(true);
   }, [router, isLoginPage]);
 
   const isReception =
-    user?.department &&
-    user.department.toLocaleLowerCase("tr-TR").includes("resepsiyon");
+    !!user &&
+    (
+      user.roleLabel?.toLocaleLowerCase("tr-TR").includes("resepsiyon") ||
+      user.department?.toLocaleLowerCase("tr-TR").includes("resepsiyon")
+    );
 
-  const isAdmin = user?.permission === "admin" || user?.roleLabel === "admin";
+  const isAdmin =
+    !!user &&
+    (
+      user.permission === "admin" ||
+      user.roleLabel?.toLocaleLowerCase("tr-TR").includes("yönetici") ||
+      user.roleLabel?.toLocaleLowerCase("tr-TR").includes("admin")
+    );
 
-  // Menü yetkileri:
-  // - Resepsiyon: sadece "sorgu" + "talep-olustur"
-  // - Admin: sadece "sorgu" + "kayit-ekle" + "kayit-sil"
-  // - Diğerleri: hepsi
   const visibleNavItems = isReception
     ? ALL_NAV_ITEMS.filter((item) =>
         ["sorgu", "talep-olustur"].includes(item.key)
       )
     : isAdmin
     ? ALL_NAV_ITEMS.filter((item) =>
-        ["sorgu", "kayit-ekle", "kayit-sil"].includes(item.key)
+        ["sorgu", "kayit-ekle", "kayit-sil", "talepler"].includes(item.key)
       )
     : ALL_NAV_ITEMS;
 
-  // Resepsiyon: kayit-ekle / kayit-sil'e gidemez → sorguya at
-  // Admin: talep-olustur'a gidemez → sorguya at
+  // URL korumaları
   useEffect(() => {
     if (!loaded || isLoginPage) return;
 
     if (isReception) {
       if (
         pathname.startsWith("/panel/kayit-ekle") ||
-        pathname.startsWith("/panel/kayit-sil")
+        pathname.startsWith("/panel/kayit-sil") ||
+        pathname.startsWith("/panel/talepler")
       ) {
         router.replace("/panel/sorgu");
       }
@@ -105,10 +108,8 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-slate-950 text-slate-50 flex">
-      {/* Sol menü – login sayfasında gizli */}
       {!isLoginPage && (
         <aside className="hidden md:flex w-56 flex-col border-r border-slate-800 bg-slate-950/95">
-          {/* Logo + başlık */}
           <div className="px-5 pt-4 pb-4 border-b border-slate-800">
             <Link href="/" className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-2xl bg-sky-500 flex items-center justify-center text-xs font-bold text-slate-950">
@@ -125,7 +126,6 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
             </Link>
           </div>
 
-          {/* Menü */}
           <nav className="flex-1 px-3 py-4 space-y-1 text-sm">
             {visibleNavItems.map((item) => {
               const active = pathname.startsWith(item.href);
@@ -133,29 +133,26 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
                 <Link
                   key={item.key}
                   href={item.href}
-                  className={classNames(
+                  className={cx(
                     "flex items-center rounded-xl px-3 py-2.5 transition-colors",
                     active
                       ? "bg-sky-500/15 text-sky-100 border border-sky-500/60"
                       : "text-slate-300 hover:bg-slate-900/70 hover:text-slate-50 border border-transparent"
                   )}
                 >
-                  <span>{item.label}</span>
+                  {item.label}
                 </Link>
               );
             })}
           </nav>
 
-          {/* Kullanıcı bilgisi + alt metin + Çıkış */}
           <div className="px-4 py-4 border-t border-slate-800 text-[11px] text-slate-500 space-y-2">
             {user && (
               <div className="space-y-1">
                 <div className="font-semibold text-slate-200">
                   {user.fullName}
                 </div>
-                <div className="text-slate-400">
-                  {user.department} • {user.roleLabel}
-                </div>
+                <div className="text-slate-400">{user.roleLabel}</div>
                 <div className="text-slate-500 text-[10px]">
                   {user.hotelName}
                 </div>
@@ -183,7 +180,6 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
         </aside>
       )}
 
-      {/* Sağ taraf (içerik) */}
       <main className="flex-1 min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-slate-950">
         {children}
       </main>

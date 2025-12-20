@@ -2,52 +2,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
 
 type RiskLevel = "bilgi" | "dikkat" | "kritik";
 
 type RiskRecord = {
   id: string;
-  fullName: string; // "Ad Soyad"
-  hotelName: string;
+  full_name: string;
+  hotel_name: string;
   department: string;
-  level: RiskLevel;
+  risk_level: RiskLevel;
   summary: string;
-  createdAt: string;
+  created_at: string;
 };
-
-// Şimdilik DEMO veriler – sonra Supabase tablosundan okuyacağız
-const MOCK_RISK_RECORDS: RiskRecord[] = [
-  {
-    id: "RISK-001",
-    fullName: "Ali Yılmaz",
-    hotelName: "Opsstay Hotel Taksim",
-    department: "Ön Büro",
-    level: "dikkat",
-    summary:
-      "Geçmiş konaklamada check-out sürecinde yüksek sesli tartışma; güvenlik ve resepsiyon ortak notu.",
-    createdAt: "2024-10-12",
-  },
-  {
-    id: "RISK-002",
-    fullName: "Ayşe Demir",
-    hotelName: "Opsstay Hotel Airport",
-    department: "F&B",
-    level: "bilgi",
-    summary:
-      "Restoran tarafında ödeme yöntemi karışıklığı; misafir çözüm odaklı, ekip not bırakarak süreci kapatmış.",
-    createdAt: "2024-09-03",
-  },
-  {
-    id: "RISK-003",
-    fullName: "Mehmet Kaya",
-    hotelName: "Opsstay Hotel City",
-    department: "Güvenlik",
-    level: "kritik",
-    summary:
-      "Gece saatlerinde diğer misafirleri rahatsız eden tekrar eden davranışlar; güvenlik ve yönetim ortak değerlendirmesi.",
-    createdAt: "2024-07-21",
-  },
-];
 
 type PanelPermission = "admin" | "editor" | "viewer";
 
@@ -62,9 +29,10 @@ type PanelUser = {
 
 export default function SorguPage() {
   const [query, setQuery] = useState("");
-  const [result, setResult] = useState<RiskRecord | null | "none">(null);
+  const [result, setResult] = useState<RiskRecord | "none" | null>(null);
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<PanelUser | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -81,24 +49,6 @@ export default function SorguPage() {
   const canCreateDirect = user?.permission === "admin";
   const canCreateRequest = user != null && user.permission !== "admin";
 
-  function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!query.trim()) return;
-
-    setLoading(true);
-    setResult(null);
-
-    // Şimdilik local mock arama – sonra buraya Supabase sorgusu gelecek
-    setTimeout(() => {
-      const normalized = normalize(query);
-      const found = MOCK_RISK_RECORDS.find(
-        (r) => normalize(r.fullName) === normalized
-      );
-      setResult(found ?? "none");
-      setLoading(false);
-    }, 500);
-  }
-
   function normalize(value: string) {
     return value
       .toLowerCase()
@@ -110,6 +60,39 @@ export default function SorguPage() {
       .replace(/ö/g, "o")
       .replace(/ş/g, "s")
       .replace(/ü/g, "u");
+  }
+
+  async function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    if (!query.trim()) return;
+
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const normalized = normalize(query);
+
+      const { data, error } = await supabase
+        .from("risk_records")
+        .select("*")
+        .ilike("full_name", normalized); // birebir eşleşme yerine esnek arama
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        setResult("none");
+      } else {
+        // şimdilik ilk kaydı göster
+        setResult(data[0] as RiskRecord);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError("Sorgu sırasında bir hata oluştu. Lütfen daha sonra tekrar deneyin.");
+      setResult(null);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function renderLevelBadge(level: RiskLevel) {
@@ -184,42 +167,41 @@ export default function SorguPage() {
           </div>
         </form>
 
+        {/* Hata */}
+        {error && (
+          <p className="mt-3 text-xs text-red-300">
+            {error}
+          </p>
+        )}
+
         {/* Sonuç alanı */}
         <div className="mt-6">
-          {result === null && !loading && (
+          {result === null && !loading && !error && (
             <p className="text-xs text-slate-500">
               Sorgu sonucu burada görünecek. Misafir adını ve soyadını tam
               yazarak başlayın.
             </p>
           )}
 
-          {result === "none" && !loading && (
+          {result === "none" && !loading && !error && (
             <div className="mt-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/5 px-5 py-4 text-sm text-emerald-100 shadow">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300 mb-1">
-                    ÖN KONTROL SONUCU
-                  </div>
-                  <div className="font-semibold">
-                    Check edildi · Sorun beklenmez.
-                  </div>
-                  <p className="mt-1 text-[13px] text-emerald-100/90">
-                    Bu isimle eşleşen herhangi bir ön kontrol uyarısı
-                    bulunmadı. Misafirle ilgili yeni bir değerlendirme
-                    yapılması gerekiyorsa aşağıdan ilgili alanı kullanabilirsiniz.
-                  </p>
-                </div>
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300 mb-1">
+                ÖN KONTROL SONUCU
               </div>
+              <div className="font-semibold">
+                Check edildi · Sorun beklenmez.
+              </div>
+              <p className="mt-1 text-[13px] text-emerald-100/90">
+                Bu isimle eşleşen herhangi bir ön kontrol uyarısı
+                bulunmadı. Misafirle ilgili yeni bir değerlendirme
+                yapılması gerekiyorsa aşağıdan ilgili alanı kullanabilirsiniz.
+              </p>
 
               <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
                 {canCreateRequest && (
                   <button
                     type="button"
-                    onClick={() => {
-                      if (typeof window !== "undefined") {
-                        window.location.href = "/panel/talep-olustur";
-                      }
-                    }}
+                    onClick={() => (window.location.href = "/panel/talep-olustur")}
                     className="inline-flex items-center rounded-full border border-sky-400/60 bg-sky-500/10 px-3 py-1 font-medium text-sky-200 hover:bg-sky-500/20 transition-colors"
                   >
                     Bu misafir için ön kontrol talebi oluştur
@@ -228,11 +210,7 @@ export default function SorguPage() {
                 {canCreateDirect && (
                   <button
                     type="button"
-                    onClick={() => {
-                      if (typeof window !== "undefined") {
-                        window.location.href = "/panel/kayit-ekle";
-                      }
-                    }}
+                    onClick={() => (window.location.href = "/panel/kayit-ekle")}
                     className="inline-flex items-center rounded-full border border-slate-500 bg-slate-800/80 px-3 py-1 font-medium text-slate-100 hover:bg-slate-700 transition-colors"
                   >
                     Bu misafir için ön kontrol kaydı ekle
@@ -242,7 +220,7 @@ export default function SorguPage() {
             </div>
           )}
 
-          {result && result !== "none" && !loading && (
+          {result && result !== "none" && !loading && !error && (
             <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-950/80 px-5 py-5 shadow-lg space-y-3 text-sm text-slate-100">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -250,13 +228,13 @@ export default function SorguPage() {
                     ÖN KONTROL BİLGİSİ BULUNDU
                   </div>
                   <div className="text-base font-semibold">
-                    {result.fullName}
+                    {result.full_name}
                   </div>
                   <div className="text-xs text-slate-400 mt-0.5">
-                    {result.hotelName} • {result.department}
+                    {result.hotel_name} • {result.department}
                   </div>
                 </div>
-                <div>{renderLevelBadge(result.level)}</div>
+                <div>{renderLevelBadge(result.risk_level)}</div>
               </div>
 
               <p className="text-[13px] text-slate-200 leading-relaxed">
@@ -264,40 +242,14 @@ export default function SorguPage() {
               </p>
 
               <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-400">
-                <span>İlk kayıt tarihi: {result.createdAt}</span>
+                <span>
+                  İlk kayıt tarihi:{" "}
+                  {new Date(result.created_at).toLocaleDateString("tr-TR")}
+                </span>
                 <span>
                   Not: Bu bilgi yalnızca operasyonu desteklemek için özet görüş
                   niteliğindedir; son karar her zaman otel yönetimine aittir.
                 </span>
-              </div>
-
-              <div className="pt-3 mt-2 border-t border-slate-800 flex flex-wrap gap-2 text-[11px]">
-                {canCreateRequest && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (typeof window !== "undefined") {
-                        window.location.href = "/panel/talep-olustur";
-                      }
-                    }}
-                    className="inline-flex items-center rounded-full border border-amber-400/60 bg-amber-500/10 px-3 py-1 font-medium text-amber-200 hover:bg-amber-500/20 transition-colors"
-                  >
-                    Bu notla ilgili ek değerlendirme talep et
-                  </button>
-                )}
-                {canCreateDirect && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (typeof window !== "undefined") {
-                        window.location.href = "/panel/kayit-sil";
-                      }
-                    }}
-                    className="inline-flex items-center rounded-full border border-slate-500 bg-slate-800/80 px-3 py-1 font-medium text-slate-100 hover:bg-slate-700 transition-colors"
-                  >
-                    Bu misafir için mevcut kayıtları yönet
-                  </button>
-                )}
               </div>
             </div>
           )}

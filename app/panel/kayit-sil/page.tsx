@@ -56,13 +56,11 @@ export default function KayitSilPage() {
     setError(null);
 
     try {
-      let query = supabase
+      const { data, error } = await supabase
         .from("risk_records")
         .select("*")
         .order("created_at", { ascending: false })
         .limit(100);
-
-      const { data, error } = await query;
 
       if (error) throw error;
       setRecords((data || []) as RiskRecord[]);
@@ -83,8 +81,11 @@ export default function KayitSilPage() {
   async function handleDelete(id: string) {
     if (!canDelete) return;
 
+    const hedef = records.find((r) => r.id === id);
+    if (!hedef) return;
+
     const confirmed = window.confirm(
-      "Bu ön kontrol kaydını silmek istediğinizden emin misiniz? Bu işlem geri alınamaz."
+      `"${hedef.full_name}" için oluşturulmuş bu ön kontrol kaydını silmek istediğinizden emin misiniz?\n\nBu işlem geri alınamaz. Kayıt, sadece silinen kayıtlar arşivinde tutulacaktır.`
     );
     if (!confirmed) return;
 
@@ -92,17 +93,38 @@ export default function KayitSilPage() {
     setError(null);
 
     try {
-      const { error } = await supabase
+      // 1) Önce LOG tablosuna ekleyelim
+      const { error: logError } = await supabase
+        .from("risk_records_deleted")
+        .insert({
+          original_id: hedef.id,
+          full_name: hedef.full_name,
+          hotel_name: hedef.hotel_name,
+          department: hedef.department,
+          risk_level: hedef.risk_level,
+          summary: hedef.summary,
+          deleted_by_user_id: user?.userId ?? null,
+          deleted_by_name: user?.fullName ?? null,
+          deleted_by_department: user?.department ?? null,
+        });
+
+      if (logError) throw logError;
+
+      // 2) Sonra asıl kaydı sil
+      const { error: deleteError } = await supabase
         .from("risk_records")
         .delete()
         .eq("id", id);
 
-      if (error) throw error;
+      if (deleteError) throw deleteError;
 
+      // 3) Ekrandan kaydı düş
       setRecords((prev) => prev.filter((r) => r.id !== id));
     } catch (err: any) {
       console.error(err);
-      setError("Kayıt silinirken bir hata oluştu. Lütfen tekrar deneyin.");
+      setError(
+        "Kayıt silinirken bir hata oluştu. Kayıt arşiv durumunu kontrol etmek için yöneticinizle görüşün."
+      );
     } finally {
       setDeleteId(null);
     }
@@ -152,7 +174,7 @@ export default function KayitSilPage() {
             <p className="mt-2 text-sm text-slate-400 max-w-2xl">
               Bu alanda sadece gerekli olduğunda kayıtları silebilirsiniz. Silme
               işleminden sonra ilgili misafir için ön kontrol notu sorgu
-              ekranında görünmez.
+              ekranında görünmez. Tüm silme işlemleri arşivde saklanır.
             </p>
           </div>
 
@@ -251,10 +273,9 @@ export default function KayitSilPage() {
 
         {/* Not */}
         <p className="mt-6 text-[11px] text-slate-500 max-w-3xl">
-          Not: Silme işlemi sadece zorunlu durumlarda kullanılmalıdır. Silinen
-          kayıtlar geri alınamaz; sistem, silinen kayıtlar için ayrı bir log
-          tutmaz. Gelecekte istersen bu alana onay akışı ve silme logu da
-          ekleyebiliriz.
+          Not: Silinen kayıtlar, operasyon bütünlüğünü korumak için ayrı bir
+          arşiv tablosunda saklanır. Gerekli olduğunda yönetim ekibi tarafından
+          denetim amaçlı görüntülenebilir.
         </p>
       </div>
     </div>

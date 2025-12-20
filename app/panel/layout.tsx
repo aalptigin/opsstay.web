@@ -33,7 +33,6 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
   const [user, setUser] = useState<PanelUser | null>(null);
   const [loaded, setLoaded] = useState(false);
 
-  // Şu an login sayfasında mıyız?
   const isLoginPage = pathname === "/panel/login";
 
   useEffect(() => {
@@ -47,7 +46,6 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
         setUser(null);
       }
     } else {
-      // Kullanıcı yoksa ve login sayfasında değilsek login'e at
       if (!isLoginPage) {
         router.replace("/panel/login");
       }
@@ -60,24 +58,42 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
     user?.department &&
     user.department.toLocaleLowerCase("tr-TR").includes("resepsiyon");
 
-  // Resepsiyon ise sadece Sorgu + Talep
+  const isAdmin = user?.permission === "admin" || user?.roleLabel === "admin";
+
+  // Menü yetkileri:
+  // - Resepsiyon: sadece "sorgu" + "talep-olustur"
+  // - Admin: sadece "sorgu" + "kayit-ekle" + "kayit-sil"
+  // - Diğerleri: hepsi
   const visibleNavItems = isReception
     ? ALL_NAV_ITEMS.filter((item) =>
         ["sorgu", "talep-olustur"].includes(item.key)
       )
+    : isAdmin
+    ? ALL_NAV_ITEMS.filter((item) =>
+        ["sorgu", "kayit-ekle", "kayit-sil"].includes(item.key)
+      )
     : ALL_NAV_ITEMS;
 
-  // Resepsiyon kullanıcısı /kayit-ekle veya /kayit-sil'e gitmeye çalışırsa sorguya at
+  // Resepsiyon: kayit-ekle / kayit-sil'e gidemez → sorguya at
+  // Admin: talep-olustur'a gidemez → sorguya at
   useEffect(() => {
-    if (!loaded || !isReception || isLoginPage) return;
+    if (!loaded || isLoginPage) return;
 
-    if (
-      pathname.startsWith("/panel/kayit-ekle") ||
-      pathname.startsWith("/panel/kayit-sil")
-    ) {
-      router.replace("/panel/sorgu");
+    if (isReception) {
+      if (
+        pathname.startsWith("/panel/kayit-ekle") ||
+        pathname.startsWith("/panel/kayit-sil")
+      ) {
+        router.replace("/panel/sorgu");
+      }
     }
-  }, [loaded, isReception, pathname, router, isLoginPage]);
+
+    if (isAdmin) {
+      if (pathname.startsWith("/panel/talep-olustur")) {
+        router.replace("/panel/sorgu");
+      }
+    }
+  }, [loaded, isLoginPage, isReception, isAdmin, pathname, router]);
 
   if (!loaded) {
     return (
@@ -151,7 +167,6 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
               onClick={() => {
                 if (typeof window !== "undefined") {
                   window.localStorage.removeItem("opsstay_user");
-                  // Çıkıştan sonra ANASAYFAYA yönlendiriyoruz
                   router.replace("/");
                 }
               }}

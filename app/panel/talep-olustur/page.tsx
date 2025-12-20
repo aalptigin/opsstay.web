@@ -1,260 +1,135 @@
-// app/panel/talep-olustur/page.tsx
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { getMyProfile } from "@/lib/authProfile";
 
-type PanelPermission = "admin" | "editor" | "viewer";
-
-type PanelUser = {
-  hotelName: string;
-  fullName: string;
-  userId: string;
-  roleLabel: string;
-  department: string;
-  permission: PanelPermission;
+const HELP: Record<string, string> = {
+  bilgi: "Operasyonu bilgilendirmek için: düşük seviye, izleme amaçlı notlar.",
+  dikkat: "Dikkat gerektiren durumlar: tekrar eden uygunsuz davranış, ödeme/uyum riski vb.",
+  kritik: "Acil müdahale gerektiren durumlar: güvenlik riski, ciddi taşkınlık vb.",
 };
 
-type RiskLevel = "bilgi" | "dikkat" | "kritik";
-
-const RISK_LEVELS: { value: RiskLevel; label: string; desc: string }[] = [
-  {
-    value: "bilgi",
-    label: "Bilgi",
-    desc: "Sadece kayıt amaçlı, düşük riskli durumlar.",
-  },
-  {
-    value: "dikkat",
-    label: "Dikkat",
-    desc: "Takip edilmesi gereken, operasyona etkisi olabilecek durumlar.",
-  },
-  {
-    value: "kritik",
-    label: "Kritik",
-    desc: "Güvenlik, şiddet, ciddi şikayet, ödeme sorunları vb.",
-  },
-];
-
 export default function TalepOlusturPage() {
-  const [user, setUser] = useState<PanelUser | null>(null);
-
   const [fullName, setFullName] = useState("");
-  const [hotelName, setHotelName] = useState("");
-  const [department, setDepartment] = useState("");
-  const [riskLevel, setRiskLevel] = useState<RiskLevel>("bilgi");
-  const [summary, setSummary] = useState("");
+  const [riskLevel, setRiskLevel] = useState<"bilgi" | "dikkat" | "kritik">("bilgi");
+  const [note, setNote] = useState("");
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string>("");
 
-  // Kullanıcı bilgisini localStorage'dan oku
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem("opsstay_user");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as PanelUser;
-        setUser(parsed);
-        // Otel ve departmanı otomatik doldur
-        setHotelName(parsed.hotelName || "");
-        setDepartment(parsed.department || "");
-      } catch {
-        setUser(null);
-      }
-    }
-  }, []);
+  const helpText = useMemo(() => HELP[riskLevel], [riskLevel]);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
+  async function submit() {
+    setMsg("");
+    const name = fullName.trim();
+    const n = note.trim();
 
-    if (!fullName.trim() || !summary.trim()) {
-      setError("Misafir adı ve açıklama alanlarını doldurun.");
-      return;
-    }
-
-    if (!hotelName.trim()) {
-      setError("Otel adı boş olamaz.");
-      return;
-    }
-
-    if (!department.trim()) {
-      setError("Departman bilgisini girin.");
-      return;
-    }
+    if (name.length < 3) return setMsg("Lütfen ad soyad girin.");
+    if (n.length < 3) return setMsg("Lütfen kısa bir açıklama yazın.");
 
     setLoading(true);
 
-    try {
-      const { error: insertError } = await supabase.from("risk_requests").insert({
-        full_name: fullName.trim(),
-        hotel_name: hotelName.trim(),
-        department: department.trim(),
-        risk_level: riskLevel,
-        summary: summary.trim(),
+    const profile = await getMyProfile();
 
-        created_by_user_id: user?.userId ?? null,
-        created_by_name: user?.fullName ?? null,
-        created_by_department: user?.department ?? department.trim() ?? null,
-        // status alanı default olarak 'bekliyor' gelecek
-      });
+    const { error } = await supabase.from("risk_requests").insert({
+      full_name: name,
+      note: n,
+      risk_level: riskLevel,
+      status: "pending",
+      created_by_email: profile?.email || null,
+      created_by_name: profile?.full_name || null,
+      created_by_role: profile?.role || null,
+      created_by_department: profile?.department || null,
+      created_by_hotel: profile?.hotel_name || null,
+      created_by_code: profile?.staff_code || null,
+    });
 
-      if (insertError) {
-        console.error(insertError);
-        throw insertError;
-      }
+    setLoading(false);
 
-      setSuccess(
-        "Talebiniz kaydedildi. Müdür onayından sonra misafir ön kontrol kayıtlarına eklenecektir."
-      );
-      setFullName("");
-      setSummary("");
-      // riskLevel, hotelName, department olduğu gibi kalabilir
-    } catch (err: any) {
-      console.error(err);
-      setError(
-        "Talep oluşturulurken bir hata oluştu. Lütfen daha sonra tekrar deneyin."
-      );
-    } finally {
-      setLoading(false);
+    if (error) {
+      setMsg("Talep gönderilemedi. Lütfen tekrar deneyin.");
+      return;
     }
+
+    setFullName("");
+    setNote("");
+    setRiskLevel("bilgi");
+    setMsg("Talebiniz iletildi. Yönetici incelemesinden sonra kayıt oluşturulabilir.");
   }
 
   return (
-    <div className="min-h-full px-6 py-6 md:px-10 md:py-8">
-      <div className="max-w-3xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-xl md:text-2xl font-semibold text-slate-50">
-            Yeni risk talebi oluştur
-          </h1>
-          <p className="mt-2 text-sm text-slate-400">
-            Misafirle yaşanan durumu özetleyin. Talebiniz sadece operasyon
-            ekibi ve müdür tarafından görülecek, kişisel veriler paylaşılmadan
-            değerlendirme yapılacaktır.
-          </p>
+    <div className="max-w-3xl">
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold">Talep oluştur</h1>
+        <p className="text-sm text-slate-300 mt-2">
+          Departmanlardan gelen ön kontrol talepleri buradan yönetime iletilir.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-slate-800/70 bg-slate-900/20 p-5 space-y-4">
+        <div>
+          <div className="text-sm text-slate-300 mb-2">Ad Soyad</div>
+          <input
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            className="w-full rounded-xl border border-slate-800/70 bg-slate-950/40 px-4 py-3 outline-none focus:border-sky-600/60"
+            placeholder="Örn: Ali Yılmaz"
+          />
         </div>
 
-        {error && (
-          <div className="mb-4 rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-[12px] text-red-100">
-            {error}
-          </div>
-        )}
-
-        {success && (
-          <div className="mb-4 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-[12px] text-emerald-100">
-            {success}
-          </div>
-        )}
-
-        <form
-          onSubmit={handleSubmit}
-          className="space-y-5 rounded-2xl border border-slate-800 bg-slate-950/80 px-4 py-4 md:px-6 md:py-6"
-        >
-          {/* Misafir adı */}
-          <div className="space-y-2">
-            <label className="block text-xs font-medium text-slate-200">
-              Misafir adı soyadı
-            </label>
-            <input
-              type="text"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="Örn: Ad Soyad"
-              className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/70"
-            />
-          </div>
-
-          {/* Otel & departman */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="block text-xs font-medium text-slate-200">
-                Otel
-              </label>
-              <input
-                type="text"
-                value={hotelName}
-                onChange={(e) => setHotelName(e.target.value)}
-                placeholder="Örn: Opsstay Hotel Taksim"
-                className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/70"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="block text-xs font-medium text-slate-200">
-                Departman
-              </label>
-              <input
-                type="text"
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                placeholder="Örn: Ön Büro • Resepsiyon"
-                className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/70"
-              />
-            </div>
-          </div>
-
-          {/* Risk seviyesi */}
-          <div className="space-y-2">
-            <label className="block text-xs font-medium text-slate-200">
-              Risk seviyesi
-            </label>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              {RISK_LEVELS.map((level) => {
-                const active = riskLevel === level.value;
-                return (
-                  <button
-                    key={level.value}
-                    type="button"
-                    onClick={() => setRiskLevel(level.value)}
-                    className={`text-left rounded-xl border px-3 py-2 text-[11px] transition-colors ${
-                      active
-                        ? "border-sky-500 bg-sky-500/15 text-sky-100"
-                        : "border-slate-700 bg-slate-900/70 text-slate-300 hover:border-sky-500/60 hover:bg-slate-900"
-                    }`}
-                  >
-                    <div className="font-medium text-[11px] mb-1">
-                      {level.label}
-                    </div>
-                    <div className="text-[10px] text-slate-400">
-                      {level.desc}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Açıklama */}
-          <div className="space-y-2">
-            <label className="block text-xs font-medium text-slate-200">
-              Durumun özeti
-            </label>
-            <textarea
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              rows={5}
-              placeholder="Kısa ve net bir şekilde ne olduğunu yazın. Tarih, olay yeri, davranış, varsa şahitler vb."
-              className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/70"
-            />
-          </div>
-
-          <div className="flex items-center justify-between pt-2">
-            <p className="text-[11px] text-slate-500 max-w-md">
-              Bu alan yalnızca yetkili operasyon ve yönetim ekibi tarafından
-              görülür. Misafir bilgileri KVKK prensiplerine uygun şekilde
-              anonimleştirilir.
-            </p>
-
+        <div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm text-slate-300">Seviye</div>
             <button
-              type="submit"
-              disabled={loading}
-              className="inline-flex items-center rounded-full bg-sky-500 hover:bg-sky-400 px-5 py-2 text-[12px] font-semibold text-slate-950 disabled:opacity-60"
+              type="button"
+              onClick={() => setInfoOpen((v) => !v)}
+              className="text-xs rounded-full border border-slate-700/70 bg-slate-900/30 hover:bg-slate-900/50 px-3 py-1"
             >
-              {loading ? "Gönderiliyor..." : "Talep oluştur"}
+              Bilgi
             </button>
           </div>
-        </form>
+
+          <select
+            value={riskLevel}
+            onChange={(e) => setRiskLevel(e.target.value as any)}
+            className="mt-2 w-full rounded-xl border border-slate-800/70 bg-slate-950/40 px-4 py-3 outline-none focus:border-sky-600/60"
+          >
+            <option value="bilgi">Bilgi</option>
+            <option value="dikkat">Dikkat</option>
+            <option value="kritik">Kritik</option>
+          </select>
+
+          {infoOpen ? (
+            <div className="mt-3 text-sm text-slate-200 rounded-xl border border-slate-800/70 bg-slate-950/30 p-3">
+              <div className="font-semibold mb-1">Seçilen seviye açıklaması</div>
+              <div className="text-slate-300">{helpText}</div>
+            </div>
+          ) : (
+            <div className="mt-2 text-xs text-slate-400">{helpText}</div>
+          )}
+        </div>
+
+        <div>
+          <div className="text-sm text-slate-300 mb-2">Açıklama / Not</div>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            className="w-full min-h-[120px] rounded-xl border border-slate-800/70 bg-slate-950/40 px-4 py-3 outline-none focus:border-sky-600/60"
+            placeholder="Kısa ve net bir özet yazın..."
+          />
+        </div>
+
+        <button
+          onClick={submit}
+          disabled={loading}
+          className="w-full rounded-full bg-sky-600/90 hover:bg-sky-600 text-slate-950 font-semibold py-3 transition disabled:opacity-60"
+        >
+          {loading ? "Gönderiliyor..." : "Talebi gönder"}
+        </button>
+
+        {msg ? <div className="text-sm text-slate-300">{msg}</div> : null}
       </div>
     </div>
   );

@@ -1,186 +1,121 @@
-// app/panel/layout.tsx
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import { getMyProfile, StaffProfile } from "@/lib/authProfile";
 
-type PanelPermission = "admin" | "editor" | "viewer";
-
-type PanelUser = {
-  hotelName: string;
-  fullName: string;
-  userId: string;
-  roleLabel: string;
-  department: string;
-  permission: PanelPermission;
-};
-
-const ALL_NAV_ITEMS = [
-  { key: "sorgu", label: "Sorgu ekranı", href: "/panel/sorgu" },
-  { key: "kayit-ekle", label: "Kayıt ekle", href: "/panel/kayit-ekle" },
-  { key: "kayit-sil", label: "Kayıt sil", href: "/panel/kayit-sil" },
-  { key: "talep-olustur", label: "Talep oluştur", href: "/panel/talep-olustur" },
-  { key: "talepler", label: "Talepler", href: "/panel/talepler" }, // ✅ yeni
-];
-
-function cx(...classes: (string | false | null | undefined)[]) {
-  return classes.filter(Boolean).join(" ");
-}
+type NavItem = { label: string; href: string };
 
 export default function PanelLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<PanelUser | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const isLoginPage = pathname === "/panel/login";
+  const [profile, setProfile] = useState<StaffProfile | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const stored = window.localStorage.getItem("opsstay_user");
-    if (stored) {
-      try {
-        setUser(JSON.parse(stored));
-      } catch {
-        setUser(null);
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) {
+        router.replace("/login");
+        return;
       }
-    } else if (!isLoginPage) {
-      router.replace("/panel/login");
+
+      const p = await getMyProfile();
+      setProfile(p);
+      setLoading(false);
+    })();
+  }, [router]);
+
+  const navItems: NavItem[] = useMemo(() => {
+    const role = (profile?.role || "").toLowerCase();
+
+    const base: NavItem[] = [{ label: "Sorgu ekranı", href: "/panel/sorgu" }];
+
+    // staff (resepsiyon/güvenlik vb): sadece sorgu + talep
+    if (role === "staff" || role === "resepsiyon") {
+      return [...base, { label: "Talep oluştur", href: "/panel/talep-olustur" }];
     }
 
-    setLoaded(true);
-  }, [router, isLoginPage]);
+    // manager/admin: sorgu + ekle + sil + talepler
+    return [
+      ...base,
+      { label: "Kayıt ekle", href: "/panel/kayit-ekle" },
+      { label: "Kayıt sil", href: "/panel/kayit-sil" },
+      { label: "Talepler", href: "/panel/talepler" },
+    ];
+  }, [profile]);
 
-  const isReception =
-    !!user &&
-    (
-      user.roleLabel?.toLocaleLowerCase("tr-TR").includes("resepsiyon") ||
-      user.department?.toLocaleLowerCase("tr-TR").includes("resepsiyon")
-    );
+  async function logout() {
+    await supabase.auth.signOut();
+    router.replace("/");
+  }
 
-  const isAdmin =
-    !!user &&
-    (
-      user.permission === "admin" ||
-      user.roleLabel?.toLocaleLowerCase("tr-TR").includes("yönetici") ||
-      user.roleLabel?.toLocaleLowerCase("tr-TR").includes("admin")
-    );
-
-  const visibleNavItems = isReception
-    ? ALL_NAV_ITEMS.filter((item) =>
-        ["sorgu", "talep-olustur"].includes(item.key)
-      )
-    : isAdmin
-    ? ALL_NAV_ITEMS.filter((item) =>
-        ["sorgu", "kayit-ekle", "kayit-sil", "talepler"].includes(item.key)
-      )
-    : ALL_NAV_ITEMS;
-
-  // URL korumaları
-  useEffect(() => {
-    if (!loaded || isLoginPage) return;
-
-    if (isReception) {
-      if (
-        pathname.startsWith("/panel/kayit-ekle") ||
-        pathname.startsWith("/panel/kayit-sil") ||
-        pathname.startsWith("/panel/talepler")
-      ) {
-        router.replace("/panel/sorgu");
-      }
-    }
-
-    if (isAdmin) {
-      if (pathname.startsWith("/panel/talep-olustur")) {
-        router.replace("/panel/sorgu");
-      }
-    }
-  }, [loaded, isLoginPage, isReception, isAdmin, pathname, router]);
-
-  if (!loaded) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
-        <div className="text-sm text-slate-400">Panel yükleniyor...</div>
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
+        Yükleniyor...
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-slate-950 text-slate-50 flex">
-      {!isLoginPage && (
-        <aside className="hidden md:flex w-56 flex-col border-r border-slate-800 bg-slate-950/95">
-          <div className="px-5 pt-4 pb-4 border-b border-slate-800">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-2xl bg-sky-500 flex items-center justify-center text-xs font-bold text-slate-950">
-                o
-              </div>
-              <div>
-                <div className="text-[11px] font-semibold tracking-[0.18em] uppercase text-slate-400">
-                  opsstay panel
-                </div>
-                <div className="text-[10px] text-slate-500">
-                  Misafir ön kontrol alanı
-                </div>
-              </div>
-            </Link>
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex">
+      {/* Left sidebar */}
+      <aside className="w-[260px] border-r border-slate-800/70 bg-slate-950/60 backdrop-blur">
+        <div className="p-4 border-b border-slate-800/70">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-sky-600/90 flex items-center justify-center font-bold">
+              O
+            </div>
+            <div>
+              <div className="text-sm tracking-widest font-semibold">OPSSTAY PANEL</div>
+              <div className="text-[11px] text-slate-300">Misafir ön kontrol alanı</div>
+            </div>
+          </div>
+        </div>
+
+        <nav className="p-3 space-y-2">
+          {navItems.map((it) => {
+            const active = pathname.startsWith(it.href);
+            return (
+              <Link
+                key={it.href}
+                href={it.href}
+                className={[
+                  "block rounded-xl px-3 py-2 text-sm border transition",
+                  active
+                    ? "bg-sky-900/40 border-sky-600/40 text-slate-100"
+                    : "bg-slate-900/20 border-slate-800/60 text-slate-200 hover:bg-slate-900/35 hover:border-slate-700/70",
+                ].join(" ")}
+              >
+                {it.label}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="mt-auto p-4 border-t border-slate-800/70 space-y-2">
+          <div className="text-[11px] text-slate-300">
+            <div className="font-semibold text-slate-100">
+              {profile?.full_name || "Yetkili Kullanıcı"}
+            </div>
+            <div>{profile?.role || "rol"}{profile?.department ? ` • ${profile.department}` : ""}</div>
+            <div className="text-slate-400">{profile?.hotel_name || ""}</div>
           </div>
 
-          <nav className="flex-1 px-3 py-4 space-y-1 text-sm">
-            {visibleNavItems.map((item) => {
-              const active = pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.key}
-                  href={item.href}
-                  className={cx(
-                    "flex items-center rounded-xl px-3 py-2.5 transition-colors",
-                    active
-                      ? "bg-sky-500/15 text-sky-100 border border-sky-500/60"
-                      : "text-slate-300 hover:bg-slate-900/70 hover:text-slate-50 border border-transparent"
-                  )}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
+          <button
+            onClick={logout}
+            className="w-full rounded-xl border border-slate-700/70 bg-slate-900/30 hover:bg-slate-900/50 px-3 py-2 text-sm"
+          >
+            Çıkış yap
+          </button>
+        </div>
+      </aside>
 
-          <div className="px-4 py-4 border-t border-slate-800 text-[11px] text-slate-500 space-y-2">
-            {user && (
-              <div className="space-y-1">
-                <div className="font-semibold text-slate-200">
-                  {user.fullName}
-                </div>
-                <div className="text-slate-400">{user.roleLabel}</div>
-                <div className="text-slate-500 text-[10px]">
-                  {user.hotelName}
-                </div>
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                if (typeof window !== "undefined") {
-                  window.localStorage.removeItem("opsstay_user");
-                  router.replace("/");
-                }
-              }}
-              className="mt-2 inline-flex items-center rounded-full border border-slate-600 px-3 py-1 text-[10px] text-slate-300 hover:bg-slate-800/80"
-            >
-              Çıkış yap
-            </button>
-
-            <p className="mt-2 text-[10px] text-slate-600">
-              Bu panel, yalnızca yetkili kullanıcılar tarafından misafir ön
-              kontrol süreçlerini yönetmek için kullanılır.
-            </p>
-          </div>
-        </aside>
-      )}
-
-      <main className="flex-1 min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-slate-950">
+      {/* Main */}
+      <main className="flex-1 p-8">
         {children}
       </main>
     </div>

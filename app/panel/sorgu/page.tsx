@@ -1,259 +1,183 @@
-// app/panel/sorgu/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-
-type RiskLevel = "bilgi" | "dikkat" | "kritik";
+import { normTR } from "@/lib/normTR";
 
 type RiskRecord = {
   id: string;
-  full_name: string;
-  hotel_name: string;
-  department: string;
-  risk_level: RiskLevel;
-  summary: string;
-  created_at: string;
+  full_name: string | null;
+  hotel_name: string | null;
+  department: string | null;
+  risk_level: string | null;
+  summary: string | null;
+  created_at?: string | null;
 };
 
-type PanelPermission = "admin" | "editor" | "viewer";
+function fmtDateTR(iso?: string | null) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" });
+}
 
-type PanelUser = {
-  hotelName: string;
-  fullName: string;
-  userId: string;
-  roleLabel: string;
-  department: string;
-  permission: PanelPermission;
-};
-
-export default function SorguPage() {
-  const [query, setQuery] = useState("");
-  const [result, setResult] = useState<RiskRecord | "none" | null>(null);
+export default function Page() {
+  const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState<PanelUser | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [record, setRecord] = useState<RiskRecord | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem("opsstay_user");
-    if (stored) {
-      try {
-        setUser(JSON.parse(stored));
-      } catch {
-        setUser(null);
-      }
-    }
-  }, []);
+  const qNorm = useMemo(() => normTR(q), [q]);
 
-  const canCreateDirect = user?.permission === "admin";
-  const canCreateRequest = user != null && user.permission !== "admin";
+  async function runSearch() {
+    setErr(null);
+    setNotFound(false);
+    setRecord(null);
 
-  function normalize(value: string) {
-    return value
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, " ")
-      .replace(/ç/g, "c")
-      .replace(/ğ/g, "g")
-      .replace(/ı/g, "i")
-      .replace(/ö/g, "o")
-      .replace(/ş/g, "s")
-      .replace(/ü/g, "u");
-  }
-
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!query.trim()) return;
+    const raw = q.trim();
+    if (!raw) return;
 
     setLoading(true);
-    setError(null);
-    setResult(null);
-
     try {
-      const normalized = normalize(query);
+      // 🔥 Sağlam arama: full_name_norm exact/contains + full_name contains
+      const orExpr = [
+        `full_name_norm.ilike.${qNorm}`,           // exact (pattern % yok)
+        `full_name_norm.ilike.%${qNorm}%`,         // contains
+        `full_name.ilike.%${raw}%`,                // fallback
+      ].join(",");
 
       const { data, error } = await supabase
         .from("risk_records")
-        .select("*")
-        .ilike("full_name", normalized); // birebir eşleşme yerine esnek arama
+        .select("id, full_name, hotel_name, department, risk_level, summary, created_at")
+        .or(orExpr)
+        .order("created_at", { ascending: false })
+        .limit(1);
 
       if (error) throw error;
 
-      if (!data || data.length === 0) {
-        setResult("none");
-      } else {
-        // şimdilik ilk kaydı göster
-        setResult(data[0] as RiskRecord);
-      }
-    } catch (err: any) {
-      console.error(err);
-      setError("Sorgu sırasında bir hata oluştu. Lütfen daha sonra tekrar deneyin.");
-      setResult(null);
+      const first = (data && data[0]) ? (data[0] as RiskRecord) : null;
+      if (!first) setNotFound(true);
+      else setRecord(first);
+    } catch (e: any) {
+      setErr(e?.message || "Sorgu sırasında hata oluştu.");
     } finally {
       setLoading(false);
     }
   }
 
-  function renderLevelBadge(level: RiskLevel) {
-    const config =
-      level === "bilgi"
-        ? {
-            label: "Bilgilendirme notu",
-            bg: "bg-emerald-500/10",
-            border: "border-emerald-400/40",
-            text: "text-emerald-300",
-          }
-        : level === "dikkat"
-        ? {
-            label: "Dikkat gerektiren durum",
-            bg: "bg-amber-500/10",
-            border: "border-amber-400/40",
-            text: "text-amber-300",
-          }
-        : {
-            label: "Yüksek önemde uyarı",
-            bg: "bg-red-500/10",
-            border: "border-red-400/40",
-            text: "text-red-300",
-          };
-
-    return (
-      <span
-        className={`${config.bg} ${config.border} ${config.text} inline-flex items-center rounded-full px-3 py-1 text-[11px] font-medium`}
-      >
-        {config.label}
-      </span>
-    );
-  }
+  const badge = (lvl?: string | null) => {
+    const v = (lvl || "").toLowerCase();
+    if (v.includes("kritik")) return "bg-red-500/15 text-red-200 border-red-400/30";
+    if (v.includes("dikkat")) return "bg-amber-400/15 text-amber-100 border-amber-300/30";
+    if (v.includes("bilgi")) return "bg-emerald-400/15 text-emerald-100 border-emerald-300/30";
+    return "bg-sky-400/15 text-sky-100 border-sky-300/30";
+  };
 
   return (
-    <div className="min-h-full px-6 py-6 md:px-10 md:py-8">
-      <div className="max-w-4xl mx-auto">
-        {/* Başlık */}
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-sky-950/50 text-slate-100">
+      <div className="mx-auto max-w-5xl px-6 py-10">
         <div className="mb-6">
-          <h1 className="text-xl md:text-2xl font-semibold text-slate-50">
-            Misafir ön kontrol sorgusu
-          </h1>
-          <p className="mt-2 text-sm text-slate-400 max-w-2xl">
-            Misafir hakkında ön kontrol yapmak için ad soyad bilgisiyle sorgu
-            yapın. Sistem yalnızca operasyon için gerekli özet görüşü sunar.
+          <h1 className="text-3xl font-semibold tracking-tight">Misafir ön kontrol sorgusu</h1>
+          <p className="mt-2 text-sm text-slate-300">
+            Misafir hakkında ön kontrol yapmak için ad soyad bilgisiyle sorgu yapın.
           </p>
         </div>
 
-        {/* Sorgu formu */}
-        <form
-          onSubmit={handleSearch}
-          className="rounded-2xl border border-slate-800 bg-slate-950/70 p-5 md:p-6 shadow-lg"
-        >
-          <div className="space-y-3">
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-[0.18em]">
-              Sorgu kriteri
-            </label>
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2.5 text-sm text-slate-50 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/70 focus:border-sky-500/70"
-              placeholder="Örn: Ad Soyad"
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="mt-3 w-full rounded-full bg-sky-500 hover:bg-sky-600 text-sm font-semibold text-slate-950 py-2.5 shadow-md hover:shadow-lg transition-all disabled:opacity-70"
-            >
-              {loading ? "Sorgulanıyor..." : "Check et"}
-            </button>
+        <div className="rounded-2xl border border-slate-700/40 bg-slate-900/35 backdrop-blur p-6">
+          <div className="text-xs tracking-[0.25em] text-slate-400 font-semibold mb-3">
+            SORGU KRİTERİ
           </div>
-        </form>
 
-        {/* Hata */}
-        {error && (
-          <p className="mt-3 text-xs text-red-300">
-            {error}
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Örn: Ad Soyad"
+            className="w-full rounded-xl border border-slate-700/50 bg-slate-950/40 px-4 py-3 text-sm outline-none focus:border-sky-500/60 focus:ring-2 focus:ring-sky-500/20"
+          />
+
+          <button
+            onClick={runSearch}
+            disabled={loading || !q.trim()}
+            className="mt-4 w-full rounded-full bg-sky-500/95 hover:bg-sky-400 transition py-3 text-sm font-semibold text-slate-950 disabled:opacity-60"
+          >
+            {loading ? "Kontrol ediliyor..." : "Check et"}
+          </button>
+
+          <p className="mt-3 text-xs text-slate-400">
+            Sonuç burada görünecek. Ad ve soyadı yazıp kontrol edin.
           </p>
+        </div>
+
+        {err && (
+          <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            {err}
+          </div>
         )}
 
-        {/* Sonuç alanı */}
-        <div className="mt-6">
-          {result === null && !loading && !error && (
-            <p className="text-xs text-slate-500">
-              Sorgu sonucu burada görünecek. Misafir adını ve soyadını tam
-              yazarak başlayın.
-            </p>
-          )}
-
-          {result === "none" && !loading && !error && (
-            <div className="mt-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/5 px-5 py-4 text-sm text-emerald-100 shadow">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300 mb-1">
-                ÖN KONTROL SONUCU
-              </div>
-              <div className="font-semibold">
-                Check edildi · Sorun beklenmez.
-              </div>
-              <p className="mt-1 text-[13px] text-emerald-100/90">
-                Bu isimle eşleşen herhangi bir ön kontrol uyarısı
-                bulunmadı. Misafirle ilgili yeni bir değerlendirme
-                yapılması gerekiyorsa aşağıdan ilgili alanı kullanabilirsiniz.
-              </p>
-
-              <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-                {canCreateRequest && (
-                  <button
-                    type="button"
-                    onClick={() => (window.location.href = "/panel/talep-olustur")}
-                    className="inline-flex items-center rounded-full border border-sky-400/60 bg-sky-500/10 px-3 py-1 font-medium text-sky-200 hover:bg-sky-500/20 transition-colors"
-                  >
-                    Bu misafir için ön kontrol talebi oluştur
-                  </button>
-                )}
-                {canCreateDirect && (
-                  <button
-                    type="button"
-                    onClick={() => (window.location.href = "/panel/kayit-ekle")}
-                    className="inline-flex items-center rounded-full border border-slate-500 bg-slate-800/80 px-3 py-1 font-medium text-slate-100 hover:bg-slate-700 transition-colors"
-                  >
-                    Bu misafir için ön kontrol kaydı ekle
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {result && result !== "none" && !loading && !error && (
-            <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-950/80 px-5 py-5 shadow-lg space-y-3 text-sm text-slate-100">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-300 mb-1">
-                    ÖN KONTROL BİLGİSİ BULUNDU
-                  </div>
-                  <div className="text-base font-semibold">
-                    {result.full_name}
-                  </div>
-                  <div className="text-xs text-slate-400 mt-0.5">
-                    {result.hotel_name} • {result.department}
-                  </div>
+        {notFound && (
+          <div className="mt-5 rounded-2xl border border-slate-700/40 bg-slate-900/25 p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-xs tracking-[0.25em] text-slate-400 font-semibold">
+                  ÖN KONTROL BİLGİSİ BULUNMADI
                 </div>
-                <div>{renderLevelBadge(result.risk_level)}</div>
+                <div className="mt-2 text-sm text-slate-200">
+                  Bu isimle kayıt bulunamadı.
+                </div>
+              </div>
+              <span className="inline-flex items-center rounded-full border border-slate-600/40 bg-slate-900/30 px-3 py-1 text-xs text-slate-300">
+                Kayıt yok
+              </span>
+            </div>
+          </div>
+        )}
+
+        {record && (
+          <div className="mt-5 rounded-2xl border border-slate-700/40 bg-slate-900/25 p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs tracking-[0.25em] text-slate-400 font-semibold">
+                  ÖN KONTROL BİLGİSİ BULUNDU
+                </div>
+
+                <div className="mt-2 text-lg font-semibold">{record.full_name || "-"}</div>
+
+                <div className="mt-1 text-xs text-slate-400">
+                  {(record.hotel_name || "—")} • {(record.department || "—")}
+                </div>
+
+                <div className="mt-3 text-sm">
+                  <span className="text-slate-300">Ön kontrol notu: </span>
+                  <span className="text-slate-100">
+                    {record.summary && record.summary.trim()
+                      ? record.summary
+                      : "Ön kontrol notu girilmedi."}
+                  </span>
+                </div>
+
+                {record.created_at && (
+                  <div className="mt-2 text-xs text-slate-400">
+                    Kayıt zamanı: {fmtDateTR(record.created_at)}
+                  </div>
+                )}
               </div>
 
-              <p className="text-[13px] text-slate-200 leading-relaxed">
-                {result.summary}
-              </p>
-
-              <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-400">
-                <span>
-                  İlk kayıt tarihi:{" "}
-                  {new Date(result.created_at).toLocaleDateString("tr-TR")}
+              <div className="flex flex-col items-end gap-2">
+                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs ${badge(record.risk_level)}`}>
+                  {record.risk_level || "bilgi"}
                 </span>
-                <span>
-                  Not: Bu bilgi yalnızca operasyonu desteklemek için özet görüş
-                  niteliğindedir; son karar her zaman otel yönetimine aittir.
+                <span className="inline-flex items-center rounded-full border border-slate-600/40 bg-slate-900/30 px-3 py-1 text-xs text-slate-300">
+                  Bilgilendirme
                 </span>
               </div>
             </div>
-          )}
-        </div>
+
+            <div className="mt-4 text-xs text-slate-400">
+              Not: Bu ekran operasyon için destek amaçlıdır; son karar otel yönetimine aittir.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

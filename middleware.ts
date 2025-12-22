@@ -1,33 +1,35 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-export async function middleware(req: NextRequest) {
-  const res = NextResponse.next();
+const COOKIE_NAME = "opsstay_session";
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: () => req.cookies.getAll(),
-        setAll: (cookies) => {
-          cookies.forEach((c) => res.cookies.set(c.name, c.value, c.options));
-        },
-      },
-    }
-  );
+export function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
 
-  const { data } = await supabase.auth.getUser();
-  const isAuthed = !!data.user;
+  // her zaman serbest
+  if (
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/favicon") ||
+    pathname === "/login"
+  ) {
+    return NextResponse.next();
+  }
 
-  if (req.nextUrl.pathname.startsWith("/panel") && !isAuthed) {
+  // sadece /panel/* koru
+  if (!pathname.startsWith("/panel")) return NextResponse.next();
+
+  // ✅ basit cookie kontrolü
+  const token = req.cookies.get(COOKIE_NAME)?.value;
+  if (token !== "1") {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("next", req.nextUrl.pathname);
     return NextResponse.redirect(url);
   }
 
-  return res;
+  return NextResponse.next();
 }
 
-export const config = { matcher: ["/panel/:path*"] };
+export const config = {
+  matcher: ["/panel/:path*"],
+};

@@ -1,13 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
-import { normTR } from "@/lib/normTR";
 
 type RiskRequest = {
   id: string;
   full_name: string | null;
-  full_name_norm?: string | null;
   risk_level: string | null;
   summary: string | null;
   status: string | null;
@@ -20,7 +17,6 @@ type RiskRequest = {
 };
 
 type StaffProfile = {
-  hotel_id?: string | null; // ✅ EKLENDİ
   full_name?: string | null;
   role?: string | null;
   department?: string | null;
@@ -35,7 +31,14 @@ function fmtDateTR(iso?: string | null) {
 }
 
 export default function Page() {
-  const [me, setMe] = useState<StaffProfile | null>(null);
+  // ✅ Demo profil
+  const [me] = useState<StaffProfile>({
+    full_name: "Operasyon Müdürü",
+    role: "manager",
+    department: "Operasyon",
+    hotel_name: "Opsstay Hotel Taksim",
+  });
+
   const [filter, setFilter] = useState<"pending" | "approved" | "rejected">("pending");
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<RiskRequest[]>([]);
@@ -48,43 +51,20 @@ export default function Page() {
     return "Reddedilen talep yok.";
   }, [filter]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data: auth } = await supabase.auth.getUser();
-        const user = auth?.user;
-        if (!user) return;
-
-        // ✅ hotel_id SELECT'e eklendi
-        const { data: prof } = await supabase
-          .from("staff_profiles")
-          .select("hotel_id, full_name, role, department, hotel_name")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        setMe((prof as any) || null);
-      } catch {
-        // ignore
-      }
-    })();
-  }, []);
-
   async function load() {
     setErr(null);
     setInfo(null);
     setLoading(true);
 
     try {
-      const { data, error } = await supabase
-        .from("risk_requests")
-        .select("*")
-        .eq("status", filter)
-        .order("created_at", { ascending: false });
+      const r = await fetch(`/api/sheets?action=list_requests&status=${filter}`, { cache: "no-store" });
+      const data = await r.json();
+      if (!data?.ok) throw new Error(data?.error || "Talepler yüklenemedi.");
 
-      if (error) throw error;
-      setItems((data || []) as RiskRequest[]);
+      setItems((data.items || []) as RiskRequest[]);
     } catch (e: any) {
       setErr(e?.message || "Talepler yüklenemedi.");
+      setItems([]);
     } finally {
       setLoading(false);
     }
@@ -95,63 +75,42 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
 
-  async function approve(req: RiskRequest) {
+  async function approve(id: string) {
     setErr(null);
     setInfo(null);
 
-    if (!req?.id) return;
-    const fullName = (req.full_name || "").trim();
-    if (!fullName) {
-      setErr("Talep içinde ad soyad yok, onaylanamaz.");
-      return;
-    }
-
     setLoading(true);
-
     try {
-      const { error: upErr } = await supabase
-        .from("risk_requests")
-        .update({ status: "approved" })
-        .eq("id", req.id);
-
-      if (upErr) throw upErr;
-
-      const sum = (req.summary || "").trim() || "Ön kontrol notu girilmedi.";
-      const lvl = (req.risk_level || "bilgi").toLowerCase();
-
-      const { error: insErr } = await supabase.from("risk_records").insert({
-        full_name: fullName,
-        full_name_norm: normTR(fullName),
-        hotel_name: req.created_by_hotel || me?.hotel_name || null,
-        department: req.created_by_department || me?.department || null,
-        risk_level: lvl,
-        summary: sum,
+      const r = await fetch("/api/sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "approve_request", id }),
       });
-
-      if (insErr) throw insErr;
+      const data = await r.json();
+      if (!data?.ok) throw new Error(data?.error || "Talep onayı başarısız");
 
       setInfo("Talep onaylandı ve kayıtlara eklendi.");
       await load();
     } catch (e: any) {
-      setErr(`Talep onayı başarısız: ${e?.message || "Bilinmeyen hata"}`);
+      setErr(e?.message || "Talep onayı başarısız.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function reject(req: RiskRequest) {
+  async function reject(id: string) {
     setErr(null);
     setInfo(null);
-    if (!req?.id) return;
 
     setLoading(true);
     try {
-      const { error } = await supabase
-        .from("risk_requests")
-        .update({ status: "rejected" })
-        .eq("id", req.id);
-
-      if (error) throw error;
+      const r = await fetch("/api/sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reject_request", id }),
+      });
+      const data = await r.json();
+      if (!data?.ok) throw new Error(data?.error || "Talep reddedilemedi");
 
       setInfo("Talep reddedildi.");
       await load();
@@ -180,6 +139,9 @@ export default function Page() {
               Resepsiyon, güvenlik ve diğer departmanlardan gelen ön kontrol taleplerini buradan yönetirsiniz.
               Onaylanan talepler, misafir ön kontrol kayıtlarına eklenir.
             </p>
+            <p className="mt-2 text-xs text-slate-500">
+              Demo profil: {me.full_name} • {me.hotel_name}
+            </p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -201,22 +163,12 @@ export default function Page() {
           </div>
         </div>
 
-        {err && (
-          <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            {err}
-          </div>
-        )}
-        {info && (
-          <div className="mt-5 rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
-            {info}
-          </div>
-        )}
+        {err && <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{err}</div>}
+        {info && <div className="mt-5 rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">{info}</div>}
 
         <div className="mt-6 space-y-4">
           {items.length === 0 && !loading && (
-            <div className="rounded-2xl border border-slate-700/40 bg-slate-900/25 p-6 text-sm text-slate-300">
-              {emptyText}
-            </div>
+            <div className="rounded-2xl border border-slate-700/40 bg-slate-900/25 p-6 text-sm text-slate-300">{emptyText}</div>
           )}
 
           {items.map((r) => (
@@ -233,15 +185,10 @@ export default function Page() {
                     </span>
                   </div>
 
-                  <div className="mt-2 text-sm text-slate-200">
-                    {r.summary && r.summary.trim().length > 0 ? r.summary : "Ön kontrol notu girilmedi."}
-                  </div>
+                  <div className="mt-2 text-sm text-slate-200">{r.summary?.trim() ? r.summary : "Ön kontrol notu girilmedi."}</div>
 
                   <div className="mt-3 text-xs text-slate-400">
-                    Talebi açan:{" "}
-                    <span className="text-slate-200 font-medium">
-                      {r.created_by_name || "—"}
-                    </span>
+                    Talebi açan: <span className="text-slate-200 font-medium">{r.created_by_name || "—"}</span>
                     {r.created_by_role ? ` (${r.created_by_role})` : ""}
                     {r.created_by_department ? ` • ${r.created_by_department}` : ""}
                   </div>
@@ -256,14 +203,14 @@ export default function Page() {
                   {filter === "pending" && (
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => reject(r)}
+                        onClick={() => reject(r.id)}
                         disabled={loading}
                         className="rounded-full border border-red-400/30 bg-red-500/10 px-4 py-2 text-sm text-red-200 hover:bg-red-500/15 transition disabled:opacity-60"
                       >
                         Reddet
                       </button>
                       <button
-                        onClick={() => approve(r)}
+                        onClick={() => approve(r.id)}
                         disabled={loading}
                         className="rounded-full border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-sm text-emerald-100 hover:bg-emerald-400/15 transition disabled:opacity-60"
                       >

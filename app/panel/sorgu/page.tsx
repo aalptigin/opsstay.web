@@ -1,8 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
-import { normTR } from "@/lib/normTR";
+import { useState } from "react";
 
 type RiskRecord = {
   id: string;
@@ -28,8 +26,6 @@ export default function Page() {
   const [notFound, setNotFound] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const qNorm = useMemo(() => normTR(q), [q]);
-
   async function runSearch() {
     setErr(null);
     setNotFound(false);
@@ -40,25 +36,16 @@ export default function Page() {
 
     setLoading(true);
     try {
-      // 🔥 Sağlam arama: full_name_norm exact/contains + full_name contains
-      const orExpr = [
-        `full_name_norm.ilike.${qNorm}`,           // exact (pattern % yok)
-        `full_name_norm.ilike.%${qNorm}%`,         // contains
-        `full_name.ilike.%${raw}%`,                // fallback
-      ].join(",");
+      const r = await fetch(`/api/sheets?action=search&q=${encodeURIComponent(raw)}`, {
+        cache: "no-store",
+      });
+      const data = await r.json();
 
-      const { data, error } = await supabase
-        .from("risk_records")
-        .select("id, full_name, hotel_name, department, risk_level, summary, created_at")
-        .or(orExpr)
-        .order("created_at", { ascending: false })
-        .limit(1);
+      if (!data?.ok) throw new Error(data?.error || "Sorgu hatası");
+      const rec = data.record ? (data.record as RiskRecord) : null;
 
-      if (error) throw error;
-
-      const first = (data && data[0]) ? (data[0] as RiskRecord) : null;
-      if (!first) setNotFound(true);
-      else setRecord(first);
+      if (!rec) setNotFound(true);
+      else setRecord(rec);
     } catch (e: any) {
       setErr(e?.message || "Sorgu sırasında hata oluştu.");
     } finally {
@@ -79,15 +66,11 @@ export default function Page() {
       <div className="mx-auto max-w-5xl px-6 py-10">
         <div className="mb-6">
           <h1 className="text-3xl font-semibold tracking-tight">Misafir ön kontrol sorgusu</h1>
-          <p className="mt-2 text-sm text-slate-300">
-            Misafir hakkında ön kontrol yapmak için ad soyad bilgisiyle sorgu yapın.
-          </p>
+          <p className="mt-2 text-sm text-slate-300">Misafir hakkında ön kontrol yapmak için ad soyad bilgisiyle sorgu yapın.</p>
         </div>
 
         <div className="rounded-2xl border border-slate-700/40 bg-slate-900/35 backdrop-blur p-6">
-          <div className="text-xs tracking-[0.25em] text-slate-400 font-semibold mb-3">
-            SORGU KRİTERİ
-          </div>
+          <div className="text-xs tracking-[0.25em] text-slate-400 font-semibold mb-3">SORGU KRİTERİ</div>
 
           <input
             value={q}
@@ -104,31 +87,21 @@ export default function Page() {
             {loading ? "Kontrol ediliyor..." : "Check et"}
           </button>
 
-          <p className="mt-3 text-xs text-slate-400">
-            Sonuç burada görünecek. Ad ve soyadı yazıp kontrol edin.
-          </p>
+          <p className="mt-3 text-xs text-slate-400">Sonuç burada görünecek. Ad ve soyadı yazıp kontrol edin.</p>
         </div>
 
         {err && (
-          <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            {err}
-          </div>
+          <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{err}</div>
         )}
 
         {notFound && (
           <div className="mt-5 rounded-2xl border border-slate-700/40 bg-slate-900/25 p-6">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <div className="text-xs tracking-[0.25em] text-slate-400 font-semibold">
-                  ÖN KONTROL BİLGİSİ BULUNMADI
-                </div>
-                <div className="mt-2 text-sm text-slate-200">
-                  Bu isimle kayıt bulunamadı.
-                </div>
+                <div className="text-xs tracking-[0.25em] text-slate-400 font-semibold">ÖN KONTROL BİLGİSİ BULUNMADI</div>
+                <div className="mt-2 text-sm text-slate-200">Bu isimle kayıt bulunamadı.</div>
               </div>
-              <span className="inline-flex items-center rounded-full border border-slate-600/40 bg-slate-900/30 px-3 py-1 text-xs text-slate-300">
-                Kayıt yok
-              </span>
+              <span className="inline-flex items-center rounded-full border border-slate-600/40 bg-slate-900/30 px-3 py-1 text-xs text-slate-300">Kayıt yok</span>
             </div>
           </div>
         )}
@@ -137,29 +110,17 @@ export default function Page() {
           <div className="mt-5 rounded-2xl border border-slate-700/40 bg-slate-900/25 p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-xs tracking-[0.25em] text-slate-400 font-semibold">
-                  ÖN KONTROL BİLGİSİ BULUNDU
-                </div>
-
+                <div className="text-xs tracking-[0.25em] text-slate-400 font-semibold">ÖN KONTROL BİLGİSİ BULUNDU</div>
                 <div className="mt-2 text-lg font-semibold">{record.full_name || "-"}</div>
-
-                <div className="mt-1 text-xs text-slate-400">
-                  {(record.hotel_name || "—")} • {(record.department || "—")}
-                </div>
+                <div className="mt-1 text-xs text-slate-400">{(record.hotel_name || "—")} • {(record.department || "—")}</div>
 
                 <div className="mt-3 text-sm">
                   <span className="text-slate-300">Ön kontrol notu: </span>
-                  <span className="text-slate-100">
-                    {record.summary && record.summary.trim()
-                      ? record.summary
-                      : "Ön kontrol notu girilmedi."}
-                  </span>
+                  <span className="text-slate-100">{record.summary?.trim() ? record.summary : "Ön kontrol notu girilmedi."}</span>
                 </div>
 
                 {record.created_at && (
-                  <div className="mt-2 text-xs text-slate-400">
-                    Kayıt zamanı: {fmtDateTR(record.created_at)}
-                  </div>
+                  <div className="mt-2 text-xs text-slate-400">Kayıt zamanı: {fmtDateTR(record.created_at)}</div>
                 )}
               </div>
 

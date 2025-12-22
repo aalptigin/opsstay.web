@@ -1,15 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 
 type RiskRecord = {
   id: string;
-  full_name: string;
+  full_name: string | null;
   hotel_name: string | null;
   department: string | null;
   risk_level: string | null;
   summary: string | null;
+  created_at?: string | null;
 };
 
 export default function KayitSilPage() {
@@ -21,34 +21,38 @@ export default function KayitSilPage() {
     setMsg("");
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("risk_records")
-      .select("id, full_name, hotel_name, department, risk_level, summary")
-      .order("created_at", { ascending: false })
-      .limit(100);
+    try {
+      const r = await fetch(`/api/sheets?action=list_records&limit=100`, { cache: "no-store" });
+      const data = await r.json();
 
-    setLoading(false);
-
-    if (error) {
-      setMsg("Kayıtlar getirilemedi.");
-      return;
+      if (!data?.ok) throw new Error(data?.error || "Kayıtlar getirilemedi.");
+      setItems((data.items || []) as RiskRecord[]);
+    } catch (e: any) {
+      setMsg(e?.message || "Kayıtlar getirilemedi.");
+      setItems([]);
+    } finally {
+      setLoading(false);
     }
-
-    setItems((data || []) as any);
   }
 
   async function remove(id: string) {
     setMsg("");
 
-    const { error } = await supabase.from("risk_records").delete().eq("id", id);
+    try {
+      const r = await fetch("/api/sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete_record", id }),
+      });
 
-    if (error) {
-      setMsg("Silme işlemi başarısız.");
-      return;
+      const data = await r.json();
+      if (!data?.ok) throw new Error(data?.error || "Silme işlemi başarısız.");
+
+      setItems((prev) => prev.filter((x) => x.id !== id));
+      setMsg("Kayıt silindi.");
+    } catch (e: any) {
+      setMsg(e?.message || "Silme işlemi başarısız.");
     }
-
-    setItems((prev) => prev.filter((x) => x.id !== id));
-    setMsg("Kayıt silindi.");
   }
 
   useEffect(() => {
@@ -60,9 +64,7 @@ export default function KayitSilPage() {
       <div className="flex items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-semibold">Kayıt sil</h1>
-          <p className="text-sm text-slate-300 mt-2">
-            Son eklenen kayıtları listeler. Seçtiğiniz kaydı silebilirsiniz.
-          </p>
+          <p className="text-sm text-slate-300 mt-2">Son eklenen kayıtları listeler. Seçtiğiniz kaydı silebilirsiniz.</p>
         </div>
 
         <button
@@ -85,13 +87,11 @@ export default function KayitSilPage() {
             {items.map((it) => (
               <div key={it.id} className="p-5 flex items-start justify-between gap-4">
                 <div>
-                  <div className="font-semibold">{it.full_name}</div>
+                  <div className="font-semibold">{it.full_name || "-"}</div>
                   <div className="text-sm text-slate-300">
                     {it.hotel_name || "—"} • {it.department || "—"} • {it.risk_level || "bilgi"}
                   </div>
-                  <div className="text-sm text-slate-200 mt-2">
-                    {it.summary || "Ön kontrol notu girilmedi."}
-                  </div>
+                  <div className="text-sm text-slate-200 mt-2">{it.summary || "Ön kontrol notu girilmedi."}</div>
                 </div>
 
                 <button

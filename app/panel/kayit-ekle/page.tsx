@@ -1,11 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
-import { normTR } from "@/lib/normTR";
 
 type StaffProfile = {
-  hotel_id?: string | null; // ✅ EKLENDİ
   full_name?: string | null;
   role?: string | null;
   department?: string | null;
@@ -13,7 +10,13 @@ type StaffProfile = {
 };
 
 export default function Page() {
-  const [me, setMe] = useState<StaffProfile | null>(null);
+  // ✅ Demo profil (Supabase Auth yoksa burasıyla çalışır)
+  const [me, setMe] = useState<StaffProfile>({
+    full_name: "Operasyon Müdürü",
+    role: "manager",
+    department: "Operasyon",
+    hotel_name: "Opsstay Hotel Taksim",
+  });
 
   const [fullName, setFullName] = useState("");
   const [riskLevel, setRiskLevel] = useState<"bilgi" | "dikkat" | "kritik">("bilgi");
@@ -24,24 +27,11 @@ export default function Page() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const { data: auth } = await supabase.auth.getUser();
-        const user = auth?.user;
-        if (!user) return;
-
-        // ✅ hotel_id SELECT'e eklendi
-        const { data: prof } = await supabase
-          .from("staff_profiles")
-          .select("hotel_id, full_name, role, department, hotel_name")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        setMe((prof as any) || null);
-      } catch {
-        // ignore
-      }
-    })();
+    // İstersen localStorage’dan demo profil çekebilirsin
+    try {
+      const raw = localStorage.getItem("opsstay_profile");
+      if (raw) setMe(JSON.parse(raw));
+    } catch {}
   }, []);
 
   const infoText = {
@@ -67,16 +57,21 @@ export default function Page() {
     try {
       const sum = summary.trim() || "Ön kontrol notu girilmedi.";
 
-      const { error } = await supabase.from("risk_records").insert({
-        full_name: name,
-        full_name_norm: normTR(name), // ✅ manuel eklemede bile garanti
-        hotel_name: me?.hotel_name || null,
-        department: me?.department || null,
-        risk_level: riskLevel,
-        summary: sum, // ✅ NOT NULL patlamaz
+      const r = await fetch("/api/sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create_record",
+          full_name: name,
+          risk_level: riskLevel,
+          summary: sum,
+          hotel_name: me?.hotel_name || "Opsstay Hotel Taksim",
+          department: me?.department || "Ön Büro",
+        }),
       });
 
-      if (error) throw error;
+      const data = await r.json();
+      if (!data?.ok) throw new Error(data?.error || "Kayıt eklenemedi.");
 
       setOk("Kayıt eklendi. Sorgu ekranında artık çıkacak.");
       setFullName("");
@@ -100,13 +95,9 @@ export default function Page() {
         </div>
 
         <div className="rounded-2xl border border-slate-700/40 bg-slate-900/35 backdrop-blur p-6">
-          <div className="text-xs tracking-[0.25em] text-slate-400 font-semibold mb-3">
-            KAYIT BİLGİLERİ
-          </div>
+          <div className="text-xs tracking-[0.25em] text-slate-400 font-semibold mb-3">KAYIT BİLGİLERİ</div>
 
-          <label className="text-xs font-semibold tracking-widest text-slate-400">
-            AD SOYAD
-          </label>
+          <label className="text-xs font-semibold tracking-widest text-slate-400">AD SOYAD</label>
           <input
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
@@ -114,9 +105,7 @@ export default function Page() {
             className="mt-2 w-full rounded-xl border border-slate-700/50 bg-slate-950/40 px-4 py-3 text-sm outline-none focus:border-sky-500/60 focus:ring-2 focus:ring-sky-500/20"
           />
 
-          <div className="mt-4 text-xs font-semibold tracking-widest text-slate-400">
-            RİSK SEVİYESİ
-          </div>
+          <div className="mt-4 text-xs font-semibold tracking-widest text-slate-400">RİSK SEVİYESİ</div>
 
           <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <button
@@ -158,9 +147,7 @@ export default function Page() {
             {infoText}
           </div>
 
-          <label className="mt-5 block text-xs font-semibold tracking-widest text-slate-400">
-            DEĞERLENDİRME NOTU
-          </label>
+          <label className="mt-5 block text-xs font-semibold tracking-widest text-slate-400">DEĞERLENDİRME NOTU</label>
           <textarea
             value={summary}
             onChange={(e) => setSummary(e.target.value)}
@@ -178,14 +165,10 @@ export default function Page() {
           </button>
 
           {ok && (
-            <div className="mt-4 rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
-              {ok}
-            </div>
+            <div className="mt-4 rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">{ok}</div>
           )}
           {err && (
-            <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-              {err}
-            </div>
+            <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{err}</div>
           )}
         </div>
       </div>

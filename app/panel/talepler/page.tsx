@@ -13,7 +13,6 @@ type RiskRequest = {
   status: string | null;
   created_at?: string | null;
 
-  // opsiyonel alanlar (varsa gösterir)
   created_by_name?: string | null;
   created_by_role?: string | null;
   created_by_department?: string | null;
@@ -21,6 +20,7 @@ type RiskRequest = {
 };
 
 type StaffProfile = {
+  hotel_id?: string | null; // ✅ EKLENDİ
   full_name?: string | null;
   role?: string | null;
   department?: string | null;
@@ -55,9 +55,10 @@ export default function Page() {
         const user = auth?.user;
         if (!user) return;
 
+        // ✅ hotel_id SELECT'e eklendi
         const { data: prof } = await supabase
           .from("staff_profiles")
-          .select("full_name, role, department, hotel_name")
+          .select("hotel_id, full_name, role, department, hotel_name")
           .eq("user_id", user.id)
           .maybeSingle();
 
@@ -108,7 +109,6 @@ export default function Page() {
     setLoading(true);
 
     try {
-      // 1) Talebi approved yap (sadece status güncelliyoruz -> kolon uyumsuzluğu riski yok)
       const { error: upErr } = await supabase
         .from("risk_requests")
         .update({ status: "approved" })
@@ -116,7 +116,6 @@ export default function Page() {
 
       if (upErr) throw upErr;
 
-      // 2) risk_records’a ekle (sadece görünen kolonlar)
       const sum = (req.summary || "").trim() || "Ön kontrol notu girilmedi.";
       const lvl = (req.risk_level || "bilgi").toLowerCase();
 
@@ -135,7 +134,6 @@ export default function Page() {
       await load();
     } catch (e: any) {
       setErr(`Talep onayı başarısız: ${e?.message || "Bilinmeyen hata"}`);
-      // status approved oldu ama insert olmadıysa, tekrar denemeye açık kalır.
     } finally {
       setLoading(false);
     }
@@ -222,10 +220,7 @@ export default function Page() {
           )}
 
           {items.map((r) => (
-            <div
-              key={r.id}
-              className="rounded-2xl border border-slate-700/40 bg-slate-900/25 p-6"
-            >
+            <div key={r.id} className="rounded-2xl border border-slate-700/40 bg-slate-900/25 p-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">

@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { normTR } from "@/lib/normTR";
 
 type StaffProfile = {
+  hotel_id?: string | null; // ✅ EKLENDİ
   full_name?: string | null;
   role?: string | null;
   department?: string | null;
@@ -29,9 +30,10 @@ export default function Page() {
         const user = auth?.user;
         if (!user) return;
 
+        // ✅ hotel_id SELECT'e eklendi
         const { data: prof } = await supabase
           .from("staff_profiles")
-          .select("full_name, role, department, hotel_name")
+          .select("hotel_id, full_name, role, department, hotel_name")
           .eq("user_id", user.id)
           .maybeSingle();
 
@@ -97,7 +99,6 @@ export default function Page() {
           </p>
         </div>
 
-        {/* Resepsiyon tarzı kart */}
         <div className="rounded-2xl border border-slate-700/40 bg-slate-900/35 backdrop-blur p-6">
           <div className="text-xs tracking-[0.25em] text-slate-400 font-semibold mb-3">
             KAYIT BİLGİLERİ
@@ -152,7 +153,6 @@ export default function Page() {
             </button>
           </div>
 
-          {/* Bilgilendirici metin (istenen kısım) */}
           <div className="mt-4 rounded-xl border border-slate-700/40 bg-slate-950/30 px-4 py-3 text-sm text-slate-200">
             <div className="text-xs font-semibold tracking-widest text-slate-400 mb-1">BİLGİLENDİRME</div>
             {infoText}

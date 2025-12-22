@@ -50,3 +50,6 @@ export async function submitRequest({
     setErr("Talep oluşturma hatası: " + readableError(e));
   }
 }
+export default function Page() {
+  return <div />;
+}

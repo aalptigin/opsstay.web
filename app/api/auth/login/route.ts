@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const SHEETS_URL = process.env.SHEETS_API_URL; // https://script.google.com/macros/s/.../exec
+const SHEETS_URL = process.env.SHEETS_API_URL;
 const API_KEY = process.env.SHEETS_API_KEY || "";
 const COOKIE_NAME = "opsstay_session";
 
@@ -9,10 +9,7 @@ export async function POST(req: Request) {
     const { email, password } = await req.json();
 
     if (!SHEETS_URL) {
-      return NextResponse.json(
-        { ok: false, error: "SHEETS_API_URL yok (Cloudflare env ekle)" },
-        { status: 500 }
-      );
+      return NextResponse.json({ ok: false, error: "SHEETS_API_URL yok" }, { status: 500 });
     }
 
     const r = await fetch(SHEETS_URL, {
@@ -28,32 +25,20 @@ export async function POST(req: Request) {
     });
 
     const text = await r.text();
-
-    // ✅ Apps Script JSON dönmüyorsa net hata göster
-    if (!text.trim().startsWith("{")) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "Apps Script JSON dönmedi (HTML döndü). Deploy erişimini 'Anyone' yap ve doPost login action JSON döndürsün.",
-          debug: text.slice(0, 200),
-        },
-        { status: 502 }
-      );
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { ok: false, error: text };
     }
-
-    const data = JSON.parse(text);
 
     if (!data?.ok) {
-      return NextResponse.json(
-        { ok: false, error: data?.error || "Login failed" },
-        { status: 401 }
-      );
+      return NextResponse.json({ ok: false, error: data?.error || "Login failed" }, { status: 401 });
     }
 
-    const res = NextResponse.json({ ok: true, user: data.user || null });
+    const res = NextResponse.json({ ok: true, user: data.user });
 
-    // ✅ cookie set
+    // ✅ Panel koruması bu cookie ile çalışacak
     res.cookies.set({
       name: COOKIE_NAME,
       value: "1",
@@ -61,14 +46,11 @@ export async function POST(req: Request) {
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      maxAge: 60 * 60 * 12,
+      maxAge: 60 * 60 * 12, // 12 saat
     });
 
     return res;
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || "Server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: e?.message || "Server error" }, { status: 500 });
   }
 }

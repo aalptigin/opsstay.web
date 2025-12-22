@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { getMyProfile, type StaffProfile } from "@/lib/authProfile";
+
+type StaffProfile = {
+  full_name?: string | null;
+  role?: string | null;
+  department?: string | null;
+  hotel_name?: string | null;
+};
 
 type NavItem = { label: string; href: string };
 
@@ -13,21 +19,32 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
 
   const [profile, setProfile] = useState<StaffProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const p = await getMyProfile();
-        setProfile(p);
-      } catch (e: any) {
-        const msg = e?.message ?? "AUTH_OR_PROFILE_ERROR";
-        setErr(msg);
+    // ✅ Artık Supabase yok: kullanıcı bilgisi login'den sonra localStorage'a yazılıyor.
+    // login page -> localStorage: "opsstay_user"
+    try {
+      const raw = localStorage.getItem("opsstay_user");
+      if (!raw) {
         router.replace("/login");
-      } finally {
-        setLoading(false);
+        return;
       }
-    })();
+      const p = JSON.parse(raw) as any;
+
+      // senin login modelin PanelUser -> StaffProfile'a uyarlıyoruz
+      const mapped: StaffProfile = {
+        full_name: p?.fullName ?? p?.full_name ?? "Yetkili Kullanıcı",
+        role: p?.permission === "admin" ? "manager" : (p?.role ?? "staff"),
+        department: p?.department ?? null,
+        hotel_name: p?.hotelName ?? p?.hotel_name ?? null,
+      };
+
+      setProfile(mapped);
+    } catch {
+      router.replace("/login");
+    } finally {
+      setLoading(false);
+    }
   }, [router]);
 
   const navItems: NavItem[] = useMemo(() => {
@@ -53,20 +70,6 @@ export default function PanelLayout({ children }: { children: React.ReactNode })
 
   if (loading) {
     return <div className="p-6 text-slate-200">Yükleniyor...</div>;
-  }
-
-  // login’e yönlendirdik ama yine de debug için gösterelim
-  if (err) {
-    return (
-      <div className="p-6 text-slate-200">
-        <div className="font-semibold">Erişim Hatası</div>
-        <div className="text-sm opacity-80 mt-2">
-          {err === "PROFILE_MISSING"
-            ? "Kullanıcı yetkilendirilmemiş (staff_profiles kaydı yok)."
-            : err}
-        </div>
-      </div>
-    );
   }
 
   return (

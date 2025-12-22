@@ -23,21 +23,18 @@ export default function LoginPage() {
     });
 
     const data = await r.json();
-    if (!data.ok) throw new Error(data.error || "Login failed");
+    if (!data?.ok) throw new Error(data?.error || "Login failed");
 
-    // İstersen user bilgisini UI için sakla (opsiyonel)
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("opsstay_user", JSON.stringify(data.user || {}));
-    }
+    // Kullanıcı bilgisi lazım -> panel sol alt yazı vb. için localStorage’a koyuyoruz
+    localStorage.setItem("opsstay_profile", JSON.stringify(data.user));
 
     router.push("/panel/sorgu");
   } catch (err: any) {
-    alert(err?.message || "Giriş hatası");
+    alert(err?.message || "Giriş yapılamadı");
   } finally {
     setLoading(false);
   }
 }
-
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 flex items-center justify-center px-4">

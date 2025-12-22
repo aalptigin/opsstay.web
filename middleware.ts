@@ -6,12 +6,13 @@ const COOKIE_NAME = "opsstay_session";
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // her zaman serbest
+  // serbest sayfalar
   if (
-    pathname.startsWith("/api/") ||
+    pathname === "/login" ||
+    pathname.startsWith("/api/auth/login") ||
+    pathname.startsWith("/api/sheets") ||
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon") ||
-    pathname === "/login"
+    pathname.startsWith("/favicon")
   ) {
     return NextResponse.next();
   }
@@ -19,15 +20,12 @@ export function middleware(req: NextRequest) {
   // sadece /panel/* koru
   if (!pathname.startsWith("/panel")) return NextResponse.next();
 
-  // ✅ basit cookie kontrolü
   const token = req.cookies.get(COOKIE_NAME)?.value;
-  if (token !== "1") {
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
-  }
+  if (token === "1") return NextResponse.next();
 
-  return NextResponse.next();
+  const url = req.nextUrl.clone();
+  url.pathname = "/login";
+  return NextResponse.redirect(url);
 }
 
 export const config = {

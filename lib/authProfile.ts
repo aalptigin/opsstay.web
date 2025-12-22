@@ -1,29 +1,37 @@
 // lib/authProfile.ts
-import { supabase } from "@/lib/supabaseClient";
-
 export type StaffProfile = {
-  user_id: string;
-  hotel_id: string;
-  full_name: string | null;
-  role: "manager" | "staff";
-  is_active: boolean;
+  full_name?: string | null;
+  role?: string | null;          // "manager" gibi
+  department?: string | null;
+  hotel_name?: string | null;
 };
 
-export async function getMyProfile(): Promise<StaffProfile> {
-  const { data: userData, error: userErr } = await supabase.auth.getUser();
+function mapRole(u: any): string {
+  // Senin login demo yapın: permission admin/editor/viewer
+  const perm = (u?.permission || u?.role || "").toLowerCase();
+  if (perm === "admin" || perm === "manager") return "manager";
+  return perm || "viewer";
+}
 
-  if (userErr || !userData.user) {
-    throw new Error("AUTH_MISSING");
+export async function getMyProfile(): Promise<StaffProfile> {
+  // Bu fonksiyon sadece client tarafında çalışmalı
+  if (typeof window === "undefined") {
+    // build/prerender sırasında buraya girerse patlamasın
+    throw new Error("CLIENT_ONLY");
   }
 
-  const { data: profile, error: profErr } = await supabase
-    .from("staff_profiles")
-    .select("user_id, hotel_id, full_name, role, is_active")
-    .eq("user_id", userData.user.id)
-    .single();
+  const raw =
+    window.localStorage.getItem("opsstay_user") ||
+    window.localStorage.getItem("opsstay_profile");
 
-  if (profErr || !profile) throw new Error("PROFILE_MISSING");
-  if (!profile.is_active) throw new Error("PROFILE_INACTIVE");
+  if (!raw) throw new Error("PROFILE_MISSING");
 
-  return profile as StaffProfile;
+  const u = JSON.parse(raw);
+
+  return {
+    full_name: u?.fullName ?? u?.full_name ?? "Yetkili Kullanıcı",
+    role: mapRole(u),
+    department: u?.department ?? null,
+    hotel_name: u?.hotelName ?? u?.hotel_name ?? null,
+  };
 }

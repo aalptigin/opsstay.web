@@ -2,16 +2,29 @@
 
 import { useEffect, useState } from "react";
 
-type StaffProfile = {
+type MeProfile = {
   full_name?: string | null;
+  fullName?: string | null;
   role?: string | null;
+  roleLabel?: string | null;
   department?: string | null;
   hotel_name?: string | null;
+  hotelName?: string | null;
+  permission?: string | null;
 };
 
+function pickFullName(p: MeProfile) {
+  return p.full_name ?? p.fullName ?? "Operasyon Müdürü";
+}
+function pickHotel(p: MeProfile) {
+  return p.hotel_name ?? p.hotelName ?? "Opsstay Hotel Taksim";
+}
+function pickDepartment(p: MeProfile) {
+  return p.department ?? "Ön Büro";
+}
+
 export default function Page() {
-  // ✅ Demo profil (Supabase Auth yoksa burasıyla çalışır)
-  const [me, setMe] = useState<StaffProfile>({
+  const [me, setMe] = useState<MeProfile>({
     full_name: "Operasyon Müdürü",
     role: "manager",
     department: "Operasyon",
@@ -27,9 +40,8 @@ export default function Page() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    // İstersen localStorage’dan demo profil çekebilirsin
     try {
-      const raw = localStorage.getItem("opsstay_profile");
+      const raw = localStorage.getItem("opsstay_user"); // ✅ login ile aynı
       if (raw) setMe(JSON.parse(raw));
     } catch {}
   }, []);
@@ -65,8 +77,9 @@ export default function Page() {
           full_name: name,
           risk_level: riskLevel,
           summary: sum,
-          hotel_name: me?.hotel_name || "Opsstay Hotel Taksim",
-          department: me?.department || "Ön Büro",
+          hotel_name: pickHotel(me),
+          department: pickDepartment(me),
+          created_by_name: pickFullName(me),
         }),
       });
 

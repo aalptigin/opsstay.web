@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+export const runtime = "edge";
 
 const COOKIE_NAME = "opsstay_session";
 

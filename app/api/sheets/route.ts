@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+export const runtime = "edge";
 
 const SHEETS_URL = process.env.SHEETS_API_URL;
 const API_KEY = process.env.SHEETS_API_KEY || "";

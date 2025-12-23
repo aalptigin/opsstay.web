@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-export const runtime = "edge";
 
-const SHEETS_URL = process.env.SHEETS_API_URL;
+const SHEETS_URL = process.env.SHEETS_API_URL; // Apps Script /exec URL
 const API_KEY = process.env.SHEETS_API_KEY || "";
 const COOKIE_NAME = "opsstay_session";
 
@@ -13,6 +12,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "SHEETS_API_URL yok" }, { status: 500 });
     }
 
+    // Apps Script'e login isteği
     const r = await fetch(SHEETS_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -37,17 +37,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: data?.error || "Login failed" }, { status: 401 });
     }
 
-    const res = NextResponse.json({ ok: true, user: data.user });
+    // ✅ cookie SET (kritik kısım)
+    const res = NextResponse.json({ ok: true, user: data.user || null });
 
-    // ✅ Panel koruması bu cookie ile çalışacak
+    // Cloudflare Pages => HTTPS olduğundan secure=true çalışır
+    // Localhost HTTP => secure=false olmalı
+    const isProd = process.env.NODE_ENV === "production";
+
     res.cookies.set({
       name: COOKIE_NAME,
       value: "1",
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: isProd,     // prod: true, local: false
       path: "/",
-      maxAge: 60 * 60 * 12, // 12 saat
+      maxAge: 60 * 60 * 12,
     });
 
     return res;

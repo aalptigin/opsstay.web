@@ -17,24 +17,29 @@ export default function LoginPage() {
 
   try {
     const r = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  credentials: "include", // ✅ çok önemli
+  body: JSON.stringify({ email, password }),
+});
+
 
     const data = await r.json();
-    if (!data?.ok) throw new Error(data?.error || "Login failed");
+    if (!data?.ok) throw new Error(data?.error || "Giriş başarısız");
 
-    // Kullanıcı bilgisi lazım -> panel sol alt yazı vb. için localStorage’a koyuyoruz
-    localStorage.setItem("opsstay_profile", JSON.stringify(data.user));
+    // Panel menüsü için profili saklayalım
+    if (typeof window !== "undefined") {
+      localStorage.setItem("opsstay_profile", JSON.stringify(data.user || {}));
+    }
 
     router.push("/panel/sorgu");
   } catch (err: any) {
-    alert(err?.message || "Giriş yapılamadı");
+    alert(err?.message || "Giriş hatası");
   } finally {
     setLoading(false);
   }
 }
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 flex items-center justify-center px-4">
